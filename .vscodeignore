@@ -16,8 +16,6 @@ node_modules/**
 npm-debug.log
 
 # Python
-python/venv/**
-python/.venv/**
 python/**/__pycache__/**
 python/**/*.pyc
 
