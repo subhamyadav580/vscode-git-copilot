@@ -1,71 +1,84 @@
-# git-copilot README
+# Git Copilot
 
-This is the README for your extension "git-copilot". After writing up a brief description, we recommend including the following sections.
+**Your AI copilot for Git workflows in VS Code.**
 
-## Features
-
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+Git Copilot is a VS Code extension that automates common Git operations using an intelligent agent.  
+It detects the current repository, guides you through staging files, generates commit messages using AI, and pushes changes — all with real-time progress updates inside VS Code.
 
 ---
 
-## Following extension guidelines
+## ✨ Features
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+- 🔍 Automatic Git repository detection
+- 📁 Detects current working directory or workspace
+- 🗂 Lists unstaged files
+- ✅ Interactive file staging
+  - Select all files
+  - Manually select files
+  - Cancel safely
+- ✍️ AI-generated commit messages
+- 🚀 Commit and push workflow
+- 📡 Live progress streaming inside VS Code
+- 🔐 Safe-by-default Git operations
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+---
 
-## Working with Markdown
+## 🧠 How It Works
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+Git Copilot consists of two layers:
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+### 1️⃣ VS Code Extension (TypeScript)
+- Detects repository context
+- Displays progress banners
+- Collects user input (file selection, confirmations)
+- Streams agent updates in real time
 
-## For more information
+### 2️⃣ Python Agent (LangGraph)
+- Executes Git workflow as a state graph
+- Streams structured status events back to VS Code
+- Uses AI to generate commit messages
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+---
 
-**Enjoy!**
+## ▶️ Usage
+
+1. Open **any Git repository** in VS Code
+2. Open Command Palette  
+   **`Cmd + Shift + P`** (macOS) / **`Ctrl + Shift + P`** (Windows/Linux)
+3. Run: Git Copilot: Run Agent
+4. Follow the prompts to stage files, generate a commit message, and push changes.
+
+---
+
+## 🛠 Requirements
+
+### System Requirements
+- VS Code **≥ 1.108**
+- Git installed and available in PATH
+- Python **3.10+**
+
+---
+
+## 🔑 Environment Variables (.env)
+
+Git Copilot uses an AI model to generate commit messages.  
+You must provide an **OpenAI API key** via a `.env` file.
+
+### 📄 Create `.env` file
+
+Inside the extension’s Python directory: `git-copilot/python/.env`
+
+Add the following:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+## 🐍 Python Setup.
+
+```cmd
+cd python
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
