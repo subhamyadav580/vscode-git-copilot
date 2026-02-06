@@ -1,28 +1,26 @@
+import os
 import sys
 import json
-import os
 from dotenv import load_dotenv
 
-# Load env vars
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-# Ensure core imports work
-sys.path.append(os.path.dirname(__file__))
-
-from core.pagent import run_agent
+def emit_error(message: str):
+    print(json.dumps({
+        "type": "error",
+        "message": message
+    }), flush=True)
+    sys.exit(1)
 
 def main():
-    try:
-        run_agent()
-    except Exception as e:
-        print(
-            json.dumps({
-                "type": "error",
-                "message": str(e)
-            }),
-            flush=True
+    if not os.getenv("OPENAI_API_KEY"):
+        emit_error(
+            "OPENAI_API_KEY is missing.\n"
+            "Please add it to python/.env"
         )
-        sys.exit(1)
+
+    from core.pagent import run_agent
+    run_agent()
 
 if __name__ == "__main__":
     main()

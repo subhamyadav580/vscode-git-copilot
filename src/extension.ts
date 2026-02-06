@@ -131,10 +131,6 @@ async function runPythonAgentWithStreaming(
       "main.py"
     );
 
-    console.log("[git-copilot] Python executable:", pythonPath);
-    console.log("[git-copilot] Python script:", scriptPath);
-    console.log("[git-copilot] Working directory (repo):", repoPath);
-
     if (!fs.existsSync(scriptPath)) {
       vscode.window.showErrorMessage(
         `Python entry file not found:\n${scriptPath}`
@@ -143,19 +139,29 @@ async function runPythonAgentWithStreaming(
       return;
     }
 
-    // ✅ ENABLE STDIN
-    const process = spawn(pythonPath, [scriptPath], {
+    const proc = spawn(pythonPath, [scriptPath], {
       cwd: repoPath,
       stdio: ["pipe", "pipe", "pipe"]
     });
 
-    process.on("error", (err) => {
-      console.error("[git-copilot] Process error:", err);
-    });
-
     let buffer = "";
+    let terminated = false;
 
-    process.stdout.on("data", async (data) => {
+    const safeEnd = (err?: string) => {
+      if (terminated) return;
+      terminated = true;
+
+      if (err) {
+        vscode.window.showErrorMessage(`Git Copilot Error:\n${err}`);
+        proc.kill();
+        reject(new Error(err));
+      } else {
+        progress.report({ message: "✅ Git Copilot finished" });
+        resolve();
+      }
+    };
+
+    proc.stdout.on("data", async (data) => {
       buffer += data.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -166,84 +172,21 @@ async function runPythonAgentWithStreaming(
         try {
           const event = JSON.parse(line);
 
+          // ❌ ERROR FROM PYTHON
+          if (event.type === "error") {
+            safeEnd(event.message);
+            return;
+          }
+
           // 🔹 STATUS UPDATE
-          if (event.type === "status" && event.message) {
-            console.log("[git-copilot][status]", event.message);
+          if (event.type === "status") {
             progress.report({ message: event.message });
           }
 
-          // 🔹 INPUT REQUEST (NEW)
+          // 🔹 INPUT REQUEST
           if (event.type === "input_request") {
-
-            let value: string[] = [];
-
-            if (Array.isArray(event.options) && event.options.length > 0) {
-
-              const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
-              qp.canSelectMany = true;
-              qp.title = event.prompt;
-              qp.placeholder = "Select files to stage";
-
-              const fileItems: vscode.QuickPickItem[] = event.options.map(
-                (opt: string) => ({
-                  label: path.basename(opt),
-                  description: opt
-                })
-              );
-
-              const selectAllItem: vscode.QuickPickItem = {
-                label: "🔹 Select all files",
-                alwaysShow: true
-              };
-
-              const cancelItem: vscode.QuickPickItem = {
-                label: "❌ Cancel",
-                alwaysShow: true
-              };
-
-              qp.items = [
-                selectAllItem,
-                cancelItem,
-                ...fileItems
-              ];
-
-              qp.onDidAccept(() => {
-                const selected = qp.selectedItems;
-
-                // Cancel
-                if (selected.find(i => i.label.startsWith("❌"))) {
-                  value = [];
-                }
-                // Select all
-                else if (selected.find(i => i.label.startsWith("🔹"))) {
-                  value = fileItems.map(i => i.description!) ;
-                }
-                // Manual selection
-                else {
-                  value = selected
-                    .map(i => i.description)
-                    .filter((v): v is string => !!v);
-                }
-
-                qp.hide();
-              });
-
-              qp.onDidHide(() => {
-                process.stdin.write(
-                  JSON.stringify({
-                    key: event.key,
-                    value
-                  }) + "\n"
-                );
-                qp.dispose();
-              });
-
-              qp.show();
-            }
+            await handleInputRequest(proc, event);
           }
-
-
-
 
         } catch {
           console.log("[git-copilot][stdout]", line);
@@ -251,24 +194,90 @@ async function runPythonAgentWithStreaming(
       }
     });
 
-    process.stderr.on("data", (data) => {
+    proc.stderr.on("data", (data) => {
       console.error("[git-copilot][stderr]", data.toString());
     });
 
-    process.on("close", (code) => {
-      if (code === 0) {
-        progress.report({ message: "✅ Git Copilot finished" });
-        console.log("[git-copilot] Python process finished successfully");
-        resolve();
-      } else {
-        vscode.window.showErrorMessage(
-          "Git Copilot failed. Check extension logs."
-        );
-        reject();
+    proc.on("error", (err) => {
+      safeEnd(err.message);
+    });
+
+    proc.on("close", (code) => {
+      if (!terminated) {
+        code === 0
+          ? safeEnd()
+          : safeEnd("Python process exited unexpectedly");
       }
     });
   });
 }
+
+
+async function handleInputRequest(
+  proc: any,
+  event: any
+): Promise<void> {
+
+  const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
+  qp.canSelectMany = true;
+  qp.title = event.prompt;
+  qp.placeholder = "Choose files to stage";
+
+  const fileItems: vscode.QuickPickItem[] = event.options.map(
+    (opt: string) => ({
+      label: path.basename(opt),
+      description: opt
+    })
+  );
+
+  const selectAllItem: vscode.QuickPickItem = {
+    label: "🔹 Select all files",
+    alwaysShow: true
+  };
+
+  const cancelItem: vscode.QuickPickItem = {
+    label: "❌ Cancel",
+    alwaysShow: true
+  };
+
+  qp.items = [selectAllItem, cancelItem, ...fileItems];
+
+  return new Promise((resolve) => {
+    qp.onDidAccept(() => {
+      let value: string[] = [];
+
+      const selected = qp.selectedItems;
+
+      if (selected.some(i => i.label.startsWith("❌"))) {
+        value = [];
+      } else if (selected.some(i => i.label.startsWith("🔹"))) {
+        value = fileItems.map(i => i.description!);
+      } else {
+        value = selected
+          .map(i => i.description)
+          .filter(Boolean) as string[];
+      }
+
+      proc.stdin.write(
+        JSON.stringify({
+          key: event.key,
+          value
+        }) + "\n"
+      );
+
+      qp.hide();
+      resolve();
+    });
+
+    qp.onDidHide(() => {
+      resolve();
+      qp.dispose();
+    });
+
+    qp.show();
+  });
+}
+
 
 
 /**
