@@ -13,6 +13,13 @@ def emit_error(message: str):
     sys.exit(1)
 
 def main():
+    """
+    Main entry point of the extension.
+
+    Checks if OPENAI_API_KEY is present in the environment variables.
+    If not present, emits an error message and exits with code 1.
+    Otherwise, runs the agent.
+    """
     if not os.getenv("OPENAI_API_KEY"):
         emit_error(
             "OPENAI_API_KEY is missing.\n"
