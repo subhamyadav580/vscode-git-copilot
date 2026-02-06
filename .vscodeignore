@@ -9,3 +9,24 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+
+# Node
+node_modules/**
+npm-debug.log
+
+# Python
+python/venv/**
+python/.venv/**
+python/**/__pycache__/**
+python/**/*.pyc
+
+# OS junk
+.DS_Store
+.env
+
+# Dev files
+.git/**
+.vscode/**
+
+**/*.env

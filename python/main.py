@@ -1,9 +1,10 @@
 import os
 import sys
 import json
-from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
 
 def emit_error(message: str):
     print(json.dumps({

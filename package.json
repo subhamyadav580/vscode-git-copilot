@@ -1,7 +1,7 @@
 {
   "name": "git-copilot",
-  "displayName": "git-copilot",
-  "description": "Git Copilot automates the git related steps",
+  "displayName": "Git Copilot",
+  "description": "Your AI copilot for Git workflows in VS Code",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.107.0"
@@ -9,7 +9,7 @@
   "categories": ["Other"],
 
   "activationEvents": [
-    "*"
+    "onCommand:git-copilot.runAgent"
   ],
 
   "main": "./out/extension.js",
@@ -32,12 +32,19 @@
   },
 
   "devDependencies": {
-    "@types/vscode": "^1.108.1",
+    "@types/vscode": "^1.107.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
+  },
+
+
+  "repository": {
+  "type": "git",
+  "url": "https://github.com/subhamyadav580/vscode-git-copilot.git"
   }
+
 }

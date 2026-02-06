@@ -15,6 +15,10 @@ export function activate(context: vscode.ExtensionContext) {
     async () => {
       console.log("[git-copilot] Command invoked: runAgent");
 
+      // 🔐 Ensure OpenAI key exists
+      const openaiKey = await getOrAskOpenAIKey(context);
+      if (!openaiKey) return;
+
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -26,30 +30,23 @@ export function activate(context: vscode.ExtensionContext) {
 
           // 1️⃣ Detect current directory
           const currentDir = getCurrentDirectory();
-          if (!currentDir) {
-            console.warn("[git-copilot] No current directory found");
-            return;
-          }
-
-          console.log("[git-copilot] Current directory:", currentDir);
+          if (!currentDir) return;
 
           // 2️⃣ Detect git repository root
           const repoPath = findGitRepoRoot(currentDir);
           if (!repoPath) {
             vscode.window.showWarningMessage(
-              "No Git repository found starting from current directory"
+              "No Git repository found in current workspace"
             );
             return;
           }
 
-          console.log("[git-copilot] Git repository root:", repoPath);
-          progress.report({ message: "📂 Git repository detected" });
-
-          // 3️⃣ Run Python agent (inside extension) and stream output
+          // 3️⃣ Run Python agent
           await runPythonAgentWithStreaming(
             context,
             progress,
-            repoPath
+            repoPath,
+            openaiKey
           );
         }
       );
@@ -59,21 +56,51 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 }
 
-/**
- * Returns the "current working directory" in VS Code terms
- * - Active file directory
- * - OR workspace root
- */
+/* -------------------------------------------------- */
+/* 🔐 OPENAI KEY HANDLING */
+/* -------------------------------------------------- */
+
+async function getOrAskOpenAIKey(
+  context: vscode.ExtensionContext
+): Promise<string | null> {
+
+  const existing = await context.secrets.get("OPENAI_API_KEY");
+  if (existing) return existing;
+
+  const key = await vscode.window.showInputBox({
+    title: "Git Copilot – OpenAI API Key Required",
+    prompt: "Enter your OpenAI API key (stored securely)",
+    password: true,
+    ignoreFocusOut: true,
+    placeHolder: "sk-..."
+  });
+
+  if (!key) {
+    vscode.window.showErrorMessage(
+      "Git Copilot cannot run without an OpenAI API key"
+    );
+    return null;
+  }
+
+  await context.secrets.store("OPENAI_API_KEY", key);
+  vscode.window.showInformationMessage("OpenAI API key saved securely");
+
+  return key;
+}
+
+/* -------------------------------------------------- */
+/* 🧭 DIRECTORY + GIT HELPERS */
+/* -------------------------------------------------- */
+
 function getCurrentDirectory(): string | null {
   const editor = vscode.window.activeTextEditor;
-
   if (editor) {
     return path.dirname(editor.document.uri.fsPath);
   }
 
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (workspaceFolders && workspaceFolders.length > 0) {
-    return workspaceFolders[0].uri.fsPath;
+  const folders = vscode.workspace.workspaceFolders;
+  if (folders?.length) {
+    return folders[0].uri.fsPath;
   }
 
   vscode.window.showWarningMessage(
@@ -82,37 +109,28 @@ function getCurrentDirectory(): string | null {
   return null;
 }
 
-/**
- * Walks UP the directory tree to find a .git folder or file
- */
 function findGitRepoRoot(startDir: string): string | null {
-  let currentDir = path.resolve(startDir);
+  let current = path.resolve(startDir);
 
   while (true) {
-    const gitPath = path.join(currentDir, ".git");
-
-    // .git can be a directory OR a file (submodules)
-    if (fs.existsSync(gitPath)) {
-      return currentDir;
+    if (fs.existsSync(path.join(current, ".git"))) {
+      return current;
     }
-
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {
-      return null;
-    }
-
-    currentDir = parentDir;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
   }
 }
 
-/**
- * Runs Python agent (bundled inside extension)
- * Streams JSON stdout into VS Code progress banner
- */
+/* -------------------------------------------------- */
+/* 🐍 PYTHON RUNNER */
+/* -------------------------------------------------- */
+
 async function runPythonAgentWithStreaming(
   context: vscode.ExtensionContext,
   progress: vscode.Progress<{ message?: string }>,
-  repoPath: string
+  repoPath: string,
+  openaiKey: string
 ): Promise<void> {
 
   return new Promise((resolve, reject) => {
@@ -141,15 +159,19 @@ async function runPythonAgentWithStreaming(
 
     const proc = spawn(pythonPath, [scriptPath], {
       cwd: repoPath,
+      env: {
+        ...process.env,
+        OPENAI_API_KEY: openaiKey   // 🔐 injected securely
+      },
       stdio: ["pipe", "pipe", "pipe"]
     });
 
     let buffer = "";
-    let terminated = false;
+    let finished = false;
 
-    const safeEnd = (err?: string) => {
-      if (terminated) return;
-      terminated = true;
+    const end = (err?: string) => {
+      if (finished) return;
+      finished = true;
 
       if (err) {
         vscode.window.showErrorMessage(`Git Copilot Error:\n${err}`);
@@ -172,18 +194,15 @@ async function runPythonAgentWithStreaming(
         try {
           const event = JSON.parse(line);
 
-          // ❌ ERROR FROM PYTHON
           if (event.type === "error") {
-            safeEnd(event.message);
+            end(event.message);
             return;
           }
 
-          // 🔹 STATUS UPDATE
           if (event.type === "status") {
             progress.report({ message: event.message });
           }
 
-          // 🔹 INPUT REQUEST
           if (event.type === "input_request") {
             await handleInputRequest(proc, event);
           }
@@ -194,91 +213,64 @@ async function runPythonAgentWithStreaming(
       }
     });
 
-    proc.stderr.on("data", (data) => {
-      console.error("[git-copilot][stderr]", data.toString());
-    });
-
-    proc.on("error", (err) => {
-      safeEnd(err.message);
-    });
+    proc.stderr.on("data", (d) =>
+      console.error("[git-copilot][stderr]", d.toString())
+    );
 
     proc.on("close", (code) => {
-      if (!terminated) {
-        code === 0
-          ? safeEnd()
-          : safeEnd("Python process exited unexpectedly");
+      if (!finished) {
+        code === 0 ? end() : end("Python process failed");
       }
     });
   });
 }
 
+/* -------------------------------------------------- */
+/* 🎛 USER INPUT HANDLER */
+/* -------------------------------------------------- */
 
-async function handleInputRequest(
-  proc: any,
-  event: any
-): Promise<void> {
+async function handleInputRequest(proc: any, event: any): Promise<void> {
 
   const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
   qp.canSelectMany = true;
   qp.title = event.prompt;
-  qp.placeholder = "Choose files to stage";
 
-  const fileItems: vscode.QuickPickItem[] = event.options.map(
-    (opt: string) => ({
-      label: path.basename(opt),
-      description: opt
-    })
-  );
+  const files = event.options.map((p: string) => ({
+    label: path.basename(p),
+    description: p
+  }));
 
-  const selectAllItem: vscode.QuickPickItem = {
-    label: "🔹 Select all files",
-    alwaysShow: true
-  };
-
-  const cancelItem: vscode.QuickPickItem = {
-    label: "❌ Cancel",
-    alwaysShow: true
-  };
-
-  qp.items = [selectAllItem, cancelItem, ...fileItems];
+  qp.items = [
+    { label: "🔹 Select all files", alwaysShow: true },
+    { label: "❌ Cancel", alwaysShow: true },
+    ...files
+  ];
 
   return new Promise((resolve) => {
     qp.onDidAccept(() => {
       let value: string[] = [];
 
-      const selected = qp.selectedItems;
-
-      if (selected.some(i => i.label.startsWith("❌"))) {
+      if (qp.selectedItems.some(i => i.label.startsWith("❌"))) {
         value = [];
-      } else if (selected.some(i => i.label.startsWith("🔹"))) {
-        value = fileItems.map(i => i.description!);
+      } else if (qp.selectedItems.some(i => i.label.startsWith("🔹"))) {
+        value = files.map((f: vscode.QuickPickItem) => f.description!).filter(Boolean);
       } else {
-        value = selected
-          .map(i => i.description)
-          .filter(Boolean) as string[];
+        value = qp.selectedItems.map(i => i.description!).filter(Boolean);
       }
 
-      proc.stdin.write(
-        JSON.stringify({
-          key: event.key,
-          value
-        }) + "\n"
-      );
-
+      proc.stdin.write(JSON.stringify({ key: event.key, value }) + "\n");
       qp.hide();
       resolve();
     });
 
     qp.onDidHide(() => {
-      resolve();
       qp.dispose();
+      resolve();
     });
 
     qp.show();
   });
 }
-
-
 
 /**
  * Called when the extension is deactivated
