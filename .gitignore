@@ -1,0 +1,22 @@
+# Build / output
+out/
+dist/
+
+# Node
+node_modules/
+
+# VS Code
+.vscode-test/
+*.vsix
+
+# Python cache (recursive)
+**/__pycache__/
+**/*.py[cod]
+
+# Virtual environments (recursive)
+**/venv/
+**/.venv/
+
+# Environment files (recursive)
+**/.env
+**/.env.*
