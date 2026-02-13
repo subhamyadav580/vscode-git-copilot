@@ -108,6 +108,14 @@ Alternatively, for development/testing, create a `.env` file:
 OPENAI_API_KEY=sk-your-openai-api-key-here
 ```
 
+You may also set:
+```bash
+ANTHROPIC_API_KEY=...
+GROQ_API_KEY=...
+GEMINI_API_KEY=...
+MISTRAL_API_KEY=...
+```
+
 > **Note:** The `.env` file is only for local development. When installed as an extension, the API key is stored in VS Code's secure storage.
 
 #### 4️⃣ Compile TypeScript
